@@ -7,26 +7,16 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/octanolabs/go-reorg-rpc/chain"
+	"github.com/octanolabs/go-reorg-rpc/common"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	log "github.com/sirupsen/logrus"
 )
 
 var port = ":8588"
-
-type request struct {
-	Jsonrpc string
-	Id      int
-	Method  string
-	Params  []string
-}
-
-type clientVersion struct {
-	Jsonrpc string
-	Id      int
-	Result  string
-}
+var fakeChain = chain.New(200)
 
 func requestHandler(res http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
@@ -37,15 +27,29 @@ func requestHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if r.Method == "web3_clientVersion" {
-		var payload clientVersion
+		var payload strPayload
 		payload.Jsonrpc = r.Jsonrpc
 		payload.Id = r.Id
 		payload.Result = "ReorgRpc/v1.0.0/linux/go1.12.1" // TODO - iquidus
 		respondWithJson(res, http.StatusOK, payload)
 	}
 
-	log.Print(r.Method)
-	log.Print(r.Params)
+	if r.Method == "eth_blockNumber" {
+		var payload strPayload
+		payload.Jsonrpc = r.Jsonrpc
+		payload.Id = r.Id
+		payload.Result = fakeChain.GetHead()
+		respondWithJson(res, http.StatusOK, payload)
+	}
+
+	if r.Method == "eth_getBlockByNumber" {
+		number, _ := common.DecodeUint64(r.Params[0])
+		var payload blockPayload
+		payload.Jsonrpc = r.Jsonrpc
+		payload.Id = r.Id
+		payload.Result = fakeChain.GetBlock(number)
+		respondWithJson(res, http.StatusOK, payload)
+	}
 }
 
 func respondWithJson(w http.ResponseWriter, code int, payload interface{}) {
@@ -65,6 +69,8 @@ func init() {
 		log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.Stamp})
 		log.SetLevel(log.InfoLevel)
 	}
+	fakeChain.InitGenesis()
+	fakeChain.StartMiner("2s")
 }
 
 func main() {
